@@ -22,17 +22,117 @@ qs.extend_pandas()
 # Constants
 RF_RATE = 0.02  # 2% risk-free rate
 
+def calculate_drawdown_periods(returns):
+    """
+    Calculate worst drawdown periods with proper error handling
+    """
+    try:
+        # Calculate drawdown series
+        drawdown_series = qs.stats.to_drawdown_series(returns)
+        
+        if len(drawdown_series) == 0:
+            return []
+        
+        # Get top drawdowns using QuantStats
+        try:
+            top_drawdowns = qs.stats.top_drawdowns(returns)
+            if not top_drawdowns:
+                return []
+            
+            # Format the drawdown data
+            drawdown_data = []
+            for i, (peak_date, recovery_date, drawdown_value) in enumerate(top_drawdowns):
+                drawdown_data.append({
+                    'Rank': i + 1,
+                    'Peak Date': peak_date if isinstance(peak_date, str) else 
+                                (peak_date.date() if hasattr(peak_date, 'date') else str(peak_date)),
+                    'Recovery Date': recovery_date if isinstance(recovery_date, str) else 
+                                   (recovery_date.date() if hasattr(recovery_date, 'date') else str(recovery_date)),
+                    'Drawdown': f"{abs(drawdown_value) * 100:.2f}%",
+                    'Duration': 'N/A'  # We'll calculate this separately
+                })
+            
+            return drawdown_data
+            
+        except Exception as e:
+            # Fallback: Calculate drawdowns manually
+            st.warning(f"Using fallback drawdown calculation: {str(e)}")
+            return calculate_drawdown_periods_manual(returns)
+            
+    except Exception as e:
+        st.error(f"Error calculating drawdown periods: {str(e)}")
+        return []
+
+def calculate_drawdown_periods_manual(returns):
+    """
+    Manual calculation of worst drawdown periods
+    """
+    try:
+        # Calculate cumulative returns
+        cumulative = (1 + returns).cumprod()
+        
+        # Calculate running maximum
+        running_max = cumulative.expanding().max()
+        
+        # Calculate drawdown
+        drawdown = (cumulative / running_max) - 1
+        
+        # Find drawdown periods
+        drawdown_periods = []
+        in_drawdown = False
+        current_start = None
+        current_trough = None
+        current_min = 0
+        
+        for i in range(len(drawdown)):
+            if drawdown.iloc[i] < -0.01:  # More than 1% drawdown
+                if not in_drawdown:
+                    in_drawdown = True
+                    current_start = drawdown.index[i]
+                    current_trough = drawdown.index[i]
+                    current_min = drawdown.iloc[i]
+                else:
+                    if drawdown.iloc[i] < current_min:
+                        current_trough = drawdown.index[i]
+                        current_min = drawdown.iloc[i]
+            else:
+                if in_drawdown:
+                    in_drawdown = False
+                    if current_start and current_trough:
+                        # Calculate duration
+                        duration = (drawdown.index[i-1] - current_start).days
+                        drawdown_periods.append({
+                            'Peak Date': current_start,
+                            'Trough Date': current_trough,
+                            'Recovery Date': drawdown.index[i-1],
+                            'Drawdown': f"{abs(current_min) * 100:.2f}%",
+                            'Duration (days)': duration
+                        })
+        
+        # Sort by drawdown magnitude
+        drawdown_periods.sort(key=lambda x: float(x['Drawdown'].rstrip('%')), reverse=True)
+        
+        # Format for display
+        result = []
+        for i, dd in enumerate(drawdown_periods[:10]):  # Top 10
+            result.append({
+                'Rank': i + 1,
+                'Peak Date': dd['Peak Date'].date() if hasattr(dd['Peak Date'], 'date') else dd['Peak Date'],
+                'Trough Date': dd['Trough Date'].date() if hasattr(dd['Trough Date'], 'date') else dd['Trough Date'],
+                'Recovery Date': dd['Recovery Date'].date() if hasattr(dd['Recovery Date'], 'date') else dd['Recovery Date'],
+                'Drawdown': dd['Drawdown'],
+                'Duration (days)': dd['Duration (days)']
+            })
+        
+        return result
+        
+    except Exception as e:
+        st.error(f"Error in manual drawdown calculation: {str(e)}")
+        return []
+
 def calculate_bollinger_bands(price_series, window=20, num_std=2):
     """
     Calculate Bollinger Bands for a price series
-    
-    Parameters:
-    - price_series: pandas Series of prices
-    - window: moving average window (default 20)
-    - num_std: number of standard deviations for bands (default 2)
-    
-    Returns:
-    - dict with middle_band, upper_band, lower_band, price, and signals
     """
     if len(price_series) < window:
         return None
@@ -47,20 +147,20 @@ def calculate_bollinger_bands(price_series, window=20, num_std=2):
     upper_band = middle_band + (rolling_std * num_std)
     lower_band = middle_band - (rolling_std * num_std)
     
-    # Calculate Bollinger Band Width (for normalization)
+    # Calculate Bollinger Band Width
     bb_width = (upper_band - lower_band) / middle_band
     
-    # Calculate %B indicator (where price is within bands)
+    # Calculate %B indicator
     percent_b = (price_series - lower_band) / (upper_band - lower_band)
     
     # Identify breaches
     upper_breach = price_series > upper_band
     lower_breach = price_series < lower_band
     
-    # Calculate log returns for additional insights
+    # Calculate log returns
     log_returns = np.log(price_series / price_series.shift(1))
     
-    # Calculate volatility (for band adjustment suggestions)
+    # Calculate volatility
     volatility = price_series.pct_change().rolling(window=window).std() * np.sqrt(252) * 100
     
     return {
@@ -81,13 +181,9 @@ def calculate_bollinger_bands(price_series, window=20, num_std=2):
 def create_bollinger_bands_chart(price_data, returns_data, tickers, bollinger_params):
     """
     Create comprehensive Bollinger Bands chart with multiple views
-    Simplified version without complex subplot layout issues
     """
     if price_data.empty or returns_data.empty:
         return go.Figure()
-    
-    # We'll create separate figures for each chart type
-    # This avoids the subplot complexity issues
     
     # Create tabs for each ticker
     st.subheader("Detailed Bollinger Bands Analysis by Ticker")
@@ -234,7 +330,7 @@ def create_bollinger_bands_chart(price_data, returns_data, tickers, bollinger_pa
                     
                     fig2.add_trace(go.Scatter(
                         x=price_idx,
-                        y=bb_data['percent_b'].values * 100,  # Convert to percentage
+                        y=bb_data['percent_b'].values * 100,
                         mode='lines',
                         name='%B Indicator',
                         line=dict(color='purple', width=1.5)
@@ -243,12 +339,10 @@ def create_bollinger_bands_chart(price_data, returns_data, tickers, bollinger_pa
                     # Add horizontal lines and zones
                     fig2.add_hrect(y0=80, y1=100, line_width=0, 
                                  fillcolor="red", opacity=0.1,
-                                 annotation_text="Overbought", 
-                                 annotation_position="top right")
+                                 annotation_text="Overbought")
                     fig2.add_hrect(y0=0, y1=20, line_width=0, 
                                  fillcolor="green", opacity=0.1,
-                                 annotation_text="Oversold", 
-                                 annotation_position="bottom right")
+                                 annotation_text="Oversold")
                     
                     fig2.add_hline(y=100, line_dash="dash", line_color="red")
                     fig2.add_hline(y=0, line_dash="dash", line_color="green")
@@ -380,7 +474,7 @@ def create_log_returns_with_bb_chart(price_data, tickers, bollinger_params):
             fig.add_trace(
                 go.Scatter(
                     x=log_returns.index,
-                    y=log_returns.values * 100,  # Convert to percentage
+                    y=log_returns.values * 100,
                     mode='lines',
                     name='Log Returns',
                     line=dict(color='blue', width=1.5),
@@ -435,7 +529,6 @@ def create_log_returns_with_bb_chart(price_data, tickers, bollinger_params):
             )
             
             # Highlight breaches
-            # Upper breaches
             upper_breach_dates = log_returns.index[upper_breach]
             upper_breach_values = log_returns[upper_breach] * 100
             
@@ -533,7 +626,7 @@ def create_bb_statistics_table(price_data, tickers, bollinger_params):
             upper_breach_percentage = (bb_data['upper_breach'].sum() / len(bb_data['price'])) * 100
             lower_breach_percentage = (bb_data['lower_breach'].sum() / len(bb_data['price'])) * 100
             
-            avg_band_width = bb_data['bb_width'].mean() * 100  # as percentage
+            avg_band_width = bb_data['bb_width'].mean() * 100
             max_band_width = bb_data['bb_width'].max() * 100
             min_band_width = bb_data['bb_width'].min() * 100
             
@@ -569,7 +662,7 @@ def download_futures_data(tickers, start_date='2010-01-01', end_date=None):
             start=start_date, 
             end=end_date,
             progress=False,
-            auto_adjust=True  # Use adjusted prices
+            auto_adjust=True
         )
         
         if data.empty:
@@ -577,16 +670,13 @@ def download_futures_data(tickers, start_date='2010-01-01', end_date=None):
         
         # Check if we have a single ticker or multiple
         if len(tickers) == 1:
-            # Single ticker returns a DataFrame with single-level columns
             if 'Adj Close' in data.columns:
                 price_data = data[['Adj Close']].copy()
                 price_data.columns = tickers
             else:
-                # Try to find adjusted close column
                 price_data = data[['Close']].copy()
                 price_data.columns = tickers
         else:
-            # Multiple tickers returns MultiIndex columns
             if ('Adj Close', tickers[0]) in data.columns:
                 price_data = data['Adj Close'].copy()
             else:
@@ -612,11 +702,11 @@ def validate_and_prepare_data(price_data, tickers):
             # Remove leading/trailing zeros or NaN values
             series = series.replace(0, np.nan).dropna()
             
-            if len(series) >= 2:  # Need at least 2 points for returns
-                # Forward fill small gaps (up to 5 days)
+            if len(series) >= 2:
+                # Forward fill small gaps
                 series = series.ffill(limit=5)
                 
-                # Ensure no negative prices (though possible, very rare)
+                # Ensure no negative prices
                 series = series[series > 0]
                 
                 if len(series) >= 2:
@@ -628,13 +718,13 @@ def validate_and_prepare_data(price_data, tickers):
     # Create DataFrame from valid data
     valid_df = pd.DataFrame(valid_data)
     
-    # Align dates (outer join then forward fill)
+    # Align dates
     valid_df = valid_df.ffill(limit=5).dropna()
     
     # Calculate returns
     returns_df = valid_df.pct_change().dropna()
     
-    # Remove extreme outliers (more than 50% daily move)
+    # Remove extreme outliers
     returns_df = returns_df[(returns_df.abs() < 0.5).all(axis=1)]
     
     # Ensure we have enough data
@@ -687,7 +777,7 @@ def get_data_with_validation(tickers, start_date, end_date, period):
             price_filtered = price_data
             returns_filtered = returns_df
         
-        # Final validation - ensure we have enough data
+        # Final validation
         if len(returns_filtered) < 5:
             st.warning(f"Insufficient data for {period} period. Using all available data.")
             price_filtered = price_data
@@ -736,7 +826,7 @@ def calculate_metrics(returns_df):
     for col in returns_df.columns:
         returns = returns_df[col].dropna()
         
-        if len(returns) < 10:  # Minimum data points
+        if len(returns) < 10:
             metrics[col] = {metric: np.nan for metric in [
                 'Cumulative Return', 'Annual Return', 'Annual Volatility',
                 'Sharpe Ratio', 'Sortino Ratio', 'Max Drawdown',
@@ -1343,7 +1433,7 @@ def main():
         # Monthly heatmap
         st.plotly_chart(create_monthly_heatmap(returns_df), use_container_width=True)
         
-        # Additional QuantEdge charts
+        # Additional QuantEdge charts - FIXED DRAWDOWN SECTION
         st.subheader("QuantEdge Detailed Analysis")
         
         if len(returns_df.columns) > 0:
@@ -1352,7 +1442,7 @@ def main():
             if selected_ticker:
                 returns = returns_df[selected_ticker].dropna()
                 
-                if len(returns) >= 20:  # Minimum for monthly analysis
+                if len(returns) >= 20:
                     col1, col2 = st.columns(2)
                     
                     with col1:
@@ -1363,30 +1453,34 @@ def main():
                             st.dataframe(monthly_table.style.format("{:.2f}%").background_gradient(
                                 cmap='RdYlGn', axis=None, vmin=-10, vmax=10
                             ))
-                        except Exception:
-                            st.warning("Could not calculate monthly returns")
+                        except Exception as e:
+                            st.warning(f"Could not calculate monthly returns: {str(e)}")
                     
                     with col2:
-                        # Worst drawdown periods
+                        # Worst drawdown periods - FIXED
                         st.write("**Worst Drawdown Periods**")
                         try:
-                            worst_dd = qs.stats.top_drawdowns(returns)
+                            # Use our fixed drawdown calculation function
+                            drawdown_data = calculate_drawdown_periods(returns)
                             
-                            if len(worst_dd) > 0:
-                                dd_data = []
-                                for peak, recovery, dd in worst_dd:
-                                    dd_data.append({
-                                        'Peak': peak.date() if hasattr(peak, 'date') else peak,
-                                        'Recovery': recovery.date() if hasattr(recovery, 'date') else recovery,
-                                        'Drawdown': f"{dd * 100:.2f}%"
-                                    })
-                                st.dataframe(pd.DataFrame(dd_data))
+                            if drawdown_data:
+                                # Convert to DataFrame for display
+                                df_drawdowns = pd.DataFrame(drawdown_data)
+                                st.dataframe(df_drawdowns)
+                                
+                                # Display summary statistics
+                                st.write("**Drawdown Statistics**")
+                                if len(drawdown_data) > 0:
+                                    max_dd = max([float(dd['Drawdown'].rstrip('%')) for dd in drawdown_data])
+                                    avg_dd = np.mean([float(dd['Drawdown'].rstrip('%')) for dd in drawdown_data])
+                                    st.metric("Maximum Drawdown", f"{max_dd:.2f}%")
+                                    st.metric("Average Top Drawdown", f"{avg_dd:.2f}%")
                             else:
-                                st.info("No significant drawdowns found")
-                        except Exception:
-                            st.warning("Could not calculate drawdown periods")
+                                st.info("No significant drawdowns found in the data")
+                        except Exception as e:
+                            st.warning(f"Could not calculate drawdown periods: {str(e)}")
                 else:
-                    st.warning("Insufficient data for detailed analysis")
+                    st.warning("Insufficient data for detailed analysis (minimum 20 data points required)")
     
     with tab6:
         st.header("Data & Diagnostics")
