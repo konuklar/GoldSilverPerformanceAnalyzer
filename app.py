@@ -81,121 +81,106 @@ def calculate_bollinger_bands(price_series, window=20, num_std=2):
 def create_bollinger_bands_chart(price_data, returns_data, tickers, bollinger_params):
     """
     Create comprehensive Bollinger Bands chart with multiple views
+    Simplified version without complex subplot layout issues
     """
     if price_data.empty or returns_data.empty:
         return go.Figure()
     
-    # Determine layout based on number of tickers
-    num_tickers = len(tickers)
+    # We'll create separate figures for each chart type
+    # This avoids the subplot complexity issues
     
-    # Create subplot layout: 3 rows for each ticker (price with BB, %B, band breaches)
-    fig = make_subplots(
-        rows=3 * num_tickers, 
-        cols=1,
-        shared_xaxes=True,
-        vertical_spacing=0.05,
-        subplot_titles=[]
-    )
+    # Create tabs for each ticker
+    st.subheader("Detailed Bollinger Bands Analysis by Ticker")
     
-    # Generate titles for each row
-    for ticker in tickers:
-        fig.add_annotation(
-            x=0.5, y=1.05, 
-            xref="paper", yref="paper",
-            text=f"{ticker} - Bollinger Bands Analysis",
-            showarrow=False,
-            font=dict(size=14, color="black"),
-            xanchor="center",
-            yanchor="bottom",
-            row=3 * tickers.index(ticker) + 1,
-            col=1
-        )
+    tabs = st.tabs([f"📊 {ticker}" for ticker in tickers])
     
-    row_counter = 1
-    
-    for ticker in tickers:
-        if ticker in price_data.columns:
-            # Get Bollinger Bands
-            bb_data = calculate_bollinger_bands(
-                price_data[ticker].dropna(),
-                window=bollinger_params['window'],
-                num_std=bollinger_params['num_std']
-            )
-            
-            if bb_data is None:
-                continue
-            
-            # Row 1: Price with Bollinger Bands
-            price_idx = bb_data['price'].index
-            
-            # Price line
-            fig.add_trace(
-                go.Scatter(
-                    x=price_idx,
-                    y=bb_data['price'].values,
-                    mode='lines',
-                    name=f'{ticker} Price',
-                    line=dict(color='blue', width=2),
-                    legendgroup=ticker,
-                    showlegend=True if row_counter == 1 else False
-                ),
-                row=row_counter, col=1
-            )
-            
-            # Middle band
-            fig.add_trace(
-                go.Scatter(
-                    x=price_idx,
-                    y=bb_data['middle_band'].values,
-                    mode='lines',
-                    name=f'MA({bb_data["window"]})',
-                    line=dict(color='red', width=1.5, dash='dash'),
-                    legendgroup=ticker,
-                    showlegend=True if row_counter == 1 else False
-                ),
-                row=row_counter, col=1
-            )
-            
-            # Upper band
-            fig.add_trace(
-                go.Scatter(
-                    x=price_idx,
-                    y=bb_data['upper_band'].values,
-                    mode='lines',
-                    name=f'Upper Band ({bb_data["num_std"]}σ)',
-                    line=dict(color='green', width=1, dash='dot'),
-                    fill=None,
-                    legendgroup=ticker,
-                    showlegend=True if row_counter == 1 else False
-                ),
-                row=row_counter, col=1
-            )
-            
-            # Lower band
-            fig.add_trace(
-                go.Scatter(
+    for tab_idx, ticker in enumerate(tickers):
+        with tabs[tab_idx]:
+            if ticker in price_data.columns:
+                # Get Bollinger Bands
+                bb_data = calculate_bollinger_bands(
+                    price_data[ticker].dropna(),
+                    window=bollinger_params['window'],
+                    num_std=bollinger_params['num_std']
+                )
+                
+                if bb_data is None:
+                    st.warning(f"Insufficient data for Bollinger Bands on {ticker}")
+                    continue
+                
+                # Display statistics
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    current_price = bb_data['price'].iloc[-1]
+                    current_ma = bb_data['middle_band'].iloc[-1]
+                    st.metric("Current Price", f"${current_price:.2f}")
+                    st.metric(f"MA({bb_data['window']})", f"${current_ma:.2f}")
+                
+                with col2:
+                    current_upper = bb_data['upper_band'].iloc[-1]
+                    current_lower = bb_data['lower_band'].iloc[-1]
+                    st.metric("Upper Band", f"${current_upper:.2f}")
+                    st.metric("Lower Band", f"${current_lower:.2f}")
+                
+                with col3:
+                    current_percent_b = bb_data['percent_b'].iloc[-1] * 100
+                    current_width = bb_data['bb_width'].iloc[-1] * 100
+                    st.metric("%B Indicator", f"{current_percent_b:.1f}%")
+                    st.metric("Band Width", f"{current_width:.2f}%")
+                
+                # Create Price with Bollinger Bands chart
+                st.subheader(f"Price with Bollinger Bands")
+                
+                fig1 = go.Figure()
+                
+                price_idx = bb_data['price'].index
+                
+                # Lower band first (for proper filling)
+                fig1.add_trace(go.Scatter(
                     x=price_idx,
                     y=bb_data['lower_band'].values,
                     mode='lines',
                     name=f'Lower Band ({bb_data["num_std"]}σ)',
                     line=dict(color='orange', width=1, dash='dot'),
-                    fill='tonexty',  # Fill between upper and lower bands
                     fillcolor='rgba(128, 128, 128, 0.1)',
-                    legendgroup=ticker,
-                    showlegend=True if row_counter == 1 else False
-                ),
-                row=row_counter, col=1
-            )
-            
-            # Highlight breaches - Upper band breaches
-            upper_breach_dates = price_idx[bb_data['upper_breach']]
-            upper_breach_prices = bb_data['price'][bb_data['upper_breach']]
-            
-            if len(upper_breach_dates) > 0:
-                fig.add_trace(
-                    go.Scatter(
-                        x=upper_breach_dates,
-                        y=upper_breach_prices,
+                    fill='tonexty'
+                ))
+                
+                # Upper band
+                fig1.add_trace(go.Scatter(
+                    x=price_idx,
+                    y=bb_data['upper_band'].values,
+                    mode='lines',
+                    name=f'Upper Band ({bb_data["num_std"]}σ)',
+                    line=dict(color='green', width=1, dash='dot'),
+                    fill='tonexty'
+                ))
+                
+                # Middle band
+                fig1.add_trace(go.Scatter(
+                    x=price_idx,
+                    y=bb_data['middle_band'].values,
+                    mode='lines',
+                    name=f'MA({bb_data["window"]})',
+                    line=dict(color='red', width=1.5, dash='dash')
+                ))
+                
+                # Price
+                fig1.add_trace(go.Scatter(
+                    x=price_idx,
+                    y=bb_data['price'].values,
+                    mode='lines',
+                    name='Price',
+                    line=dict(color='blue', width=2)
+                ))
+                
+                # Highlight breaches
+                upper_breach_mask = bb_data['upper_breach']
+                if upper_breach_mask.any():
+                    fig1.add_trace(go.Scatter(
+                        x=price_idx[upper_breach_mask],
+                        y=bb_data['price'][upper_breach_mask].values,
                         mode='markers',
                         name='Upper Band Breach',
                         marker=dict(
@@ -203,22 +188,14 @@ def create_bollinger_bands_chart(price_data, returns_data, tickers, bollinger_pa
                             size=8,
                             symbol='triangle-down',
                             line=dict(width=1, color='darkred')
-                        ),
-                        legendgroup=f"{ticker}_breaches",
-                        showlegend=True if row_counter == 1 else False
-                    ),
-                    row=row_counter, col=1
-                )
-            
-            # Highlight breaches - Lower band breaches
-            lower_breach_dates = price_idx[bb_data['lower_breach']]
-            lower_breach_prices = bb_data['price'][bb_data['lower_breach']]
-            
-            if len(lower_breach_dates) > 0:
-                fig.add_trace(
-                    go.Scatter(
-                        x=lower_breach_dates,
-                        y=lower_breach_prices,
+                        )
+                    ))
+                
+                lower_breach_mask = bb_data['lower_breach']
+                if lower_breach_mask.any():
+                    fig1.add_trace(go.Scatter(
+                        x=price_idx[lower_breach_mask],
+                        y=bb_data['price'][lower_breach_mask].values,
                         mode='markers',
                         name='Lower Band Breach',
                         marker=dict(
@@ -226,132 +203,144 @@ def create_bollinger_bands_chart(price_data, returns_data, tickers, bollinger_pa
                             size=8,
                             symbol='triangle-up',
                             line=dict(width=1, color='darkgreen')
-                        ),
-                        legendgroup=f"{ticker}_breaches",
-                        showlegend=True if row_counter == 1 else False
+                        )
+                    ))
+                
+                fig1.update_layout(
+                    height=500,
+                    title=f"{ticker} - Price with Bollinger Bands",
+                    xaxis_title="Date",
+                    yaxis_title="Price",
+                    hovermode='x unified',
+                    template='plotly_white',
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=1.02,
+                        xanchor="right",
+                        x=1
+                    )
+                )
+                
+                st.plotly_chart(fig1, use_container_width=True)
+                
+                # Create %B Indicator chart
+                col1, col2 = st.columns([2, 1])
+                
+                with col1:
+                    st.subheader("%B Indicator")
+                    
+                    fig2 = go.Figure()
+                    
+                    fig2.add_trace(go.Scatter(
+                        x=price_idx,
+                        y=bb_data['percent_b'].values * 100,  # Convert to percentage
+                        mode='lines',
+                        name='%B Indicator',
+                        line=dict(color='purple', width=1.5)
+                    ))
+                    
+                    # Add horizontal lines and zones
+                    fig2.add_hrect(y0=80, y1=100, line_width=0, 
+                                 fillcolor="red", opacity=0.1,
+                                 annotation_text="Overbought", 
+                                 annotation_position="top right")
+                    fig2.add_hrect(y0=0, y1=20, line_width=0, 
+                                 fillcolor="green", opacity=0.1,
+                                 annotation_text="Oversold", 
+                                 annotation_position="bottom right")
+                    
+                    fig2.add_hline(y=100, line_dash="dash", line_color="red")
+                    fig2.add_hline(y=0, line_dash="dash", line_color="green")
+                    fig2.add_hline(y=50, line_dash="dot", line_color="gray")
+                    
+                    fig2.update_layout(
+                        height=300,
+                        yaxis_range=[-10, 110],
+                        xaxis_title="Date",
+                        yaxis_title="%B Indicator (%)",
+                        hovermode='x unified',
+                        template='plotly_white'
+                    )
+                    
+                    st.plotly_chart(fig2, use_container_width=True)
+                
+                with col2:
+                    st.subheader("Band Statistics")
+                    
+                    # Calculate statistics
+                    total_breaches = bb_data['upper_breach'].sum() + bb_data['lower_breach'].sum()
+                    breach_percentage = (total_breaches / len(bb_data['price'])) * 100
+                    
+                    upper_breach_percentage = (bb_data['upper_breach'].sum() / len(bb_data['price'])) * 100
+                    lower_breach_percentage = (bb_data['lower_breach'].sum() / len(bb_data['price'])) * 100
+                    
+                    avg_band_width = bb_data['bb_width'].mean() * 100
+                    max_band_width = bb_data['bb_width'].max() * 100
+                    min_band_width = bb_data['bb_width'].min() * 100
+                    
+                    # Display metrics
+                    st.metric("Total Breaches", f"{int(total_breaches)}")
+                    st.metric("Breach %", f"{breach_percentage:.1f}%")
+                    st.metric("Upper Breach %", f"{upper_breach_percentage:.1f}%")
+                    st.metric("Lower Breach %", f"{lower_breach_percentage:.1f}%")
+                    st.metric("Avg Band Width", f"{avg_band_width:.2f}%")
+                    st.metric("Max Band Width", f"{max_band_width:.2f}%")
+                    st.metric("Min Band Width", f"{min_band_width:.2f}%")
+                
+                # Create Band Width and Breach Frequency chart
+                st.subheader("Band Width & Breach Frequency")
+                
+                fig3 = make_subplots(specs=[[{"secondary_y": True}]])
+                
+                # Band Width
+                fig3.add_trace(
+                    go.Scatter(
+                        x=price_idx,
+                        y=bb_data['bb_width'].values * 100,
+                        mode='lines',
+                        name='Band Width (%)',
+                        line=dict(color='brown', width=1.5)
                     ),
-                    row=row_counter, col=1
+                    secondary_y=False
                 )
-            
-            fig.update_yaxes(title_text="Price", row=row_counter, col=1)
-            
-            # Row 2: %B Indicator
-            row_counter += 1
-            
-            # %B line
-            fig.add_trace(
-                go.Scatter(
-                    x=price_idx,
-                    y=bb_data['percent_b'].values,
-                    mode='lines',
-                    name='%B Indicator',
-                    line=dict(color='purple', width=1.5),
-                    legendgroup=f"{ticker}_percent_b",
-                    showlegend=True if row_counter == 2 else False
-                ),
-                row=row_counter, col=1
-            )
-            
-            # Add horizontal lines for overbought/oversold levels
-            fig.add_hline(y=1, line_dash="dash", line_color="red", 
-                         annotation_text="Overbought (100%)", 
-                         annotation_position="bottom right",
-                         row=row_counter, col=1)
-            fig.add_hline(y=0, line_dash="dash", line_color="green", 
-                         annotation_text="Oversold (0%)", 
-                         annotation_position="top right",
-                         row=row_counter, col=1)
-            fig.add_hline(y=0.5, line_dash="dot", line_color="gray", 
-                         annotation_text="Middle", 
-                         annotation_position="top right",
-                         row=row_counter, col=1)
-            
-            # Highlight overbought/oversold areas
-            fig.add_hrect(y0=0.8, y1=1, line_width=0, 
-                         fillcolor="red", opacity=0.1,
-                         row=row_counter, col=1)
-            fig.add_hrect(y0=0, y1=0.2, line_width=0, 
-                         fillcolor="green", opacity=0.1,
-                         row=row_counter, col=1)
-            
-            fig.update_yaxes(title_text="%B Indicator", 
-                           range=[-0.1, 1.1],
-                           row=row_counter, col=1)
-            
-            # Row 3: Bollinger Band Width and Breach Frequency
-            row_counter += 1
-            
-            # Band Width
-            fig.add_trace(
-                go.Scatter(
-                    x=price_idx,
-                    y=bb_data['bb_width'].values,
-                    mode='lines',
-                    name='Band Width',
-                    line=dict(color='brown', width=1.5),
-                    yaxis='y1',
-                    legendgroup=f"{ticker}_width",
-                    showlegend=True if row_counter == 3 else False
-                ),
-                row=row_counter, col=1
-            )
-            
-            # Calculate breach frequency (rolling 20-day)
-            breach_frequency = (bb_data['upper_breach'] | bb_data['lower_breach']).rolling(window=20).mean() * 100
-            
-            fig.add_trace(
-                go.Scatter(
-                    x=price_idx,
-                    y=breach_frequency.values,
-                    mode='lines',
-                    name='Breach Frequency (%)',
-                    line=dict(color='cyan', width=1.5, dash='dash'),
-                    yaxis='y2',
-                    legendgroup=f"{ticker}_frequency",
-                    showlegend=True if row_counter == 3 else False
-                ),
-                row=row_counter, col=1
-            )
-            
-            # Add secondary y-axis for breach frequency
-            fig.update_layout(
-                yaxis2=dict(
-                    title="Breach Frequency (%)",
-                    titlefont=dict(color="cyan"),
-                    tickfont=dict(color="cyan"),
-                    overlaying="y",
-                    side="right",
-                    range=[0, 50]
+                
+                # Breach Frequency (rolling 20-day)
+                breach_frequency = (bb_data['upper_breach'] | bb_data['lower_breach']).rolling(window=20).mean() * 100
+                
+                fig3.add_trace(
+                    go.Scatter(
+                        x=price_idx,
+                        y=breach_frequency.values,
+                        mode='lines',
+                        name='Breach Frequency (%)',
+                        line=dict(color='cyan', width=1.5, dash='dash')
+                    ),
+                    secondary_y=True
                 )
-            )
-            
-            fig.update_yaxes(title_text="Band Width", 
-                           row=row_counter, col=1)
-            
-            row_counter += 1
+                
+                # Set y-axes titles
+                fig3.update_yaxes(title_text="Band Width (%)", secondary_y=False)
+                fig3.update_yaxes(title_text="Breach Frequency (%)", secondary_y=True)
+                
+                fig3.update_layout(
+                    height=300,
+                    xaxis_title="Date",
+                    hovermode='x unified',
+                    template='plotly_white',
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=1.02,
+                        xanchor="right",
+                        x=1
+                    )
+                )
+                
+                st.plotly_chart(fig3, use_container_width=True)
     
-    # Update layout
-    fig.update_layout(
-        height=350 * num_tickers,
-        title_text="Bollinger Bands Analysis",
-        template='plotly_white',
-        hovermode='x unified',
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1
-        )
-    )
-    
-    # Update x-axis labels only for bottom row
-    for i in range(1, 3 * num_tickers):
-        fig.update_xaxes(showticklabels=False, row=i, col=1)
-    
-    fig.update_xaxes(title_text="Date", row=3 * num_tickers, col=1)
-    
-    return fig
+    # Return empty figure for compatibility
+    return go.Figure()
 
 def create_log_returns_with_bb_chart(price_data, tickers, bollinger_params):
     """
@@ -780,9 +769,223 @@ def calculate_metrics(returns_df):
     
     return metrics
 
-# [Previous chart functions remain the same: create_returns_chart, create_drawdown_chart, 
-# create_monthly_heatmap, create_distribution_chart, create_rolling_metrics_chart]
-# (Keeping them as they were, not repeating for brevity)
+# Advanced plotting functions
+def create_returns_chart(returns_df):
+    """Create cumulative returns chart"""
+    fig = go.Figure()
+    
+    for col in returns_df.columns:
+        try:
+            cum_returns = (1 + returns_df[col].dropna()).cumprod()
+            if len(cum_returns) > 0:
+                fig.add_trace(go.Scatter(
+                    x=cum_returns.index,
+                    y=cum_returns.values * 100,
+                    mode='lines',
+                    name=col,
+                    line=dict(width=2)
+                ))
+        except Exception:
+            continue
+    
+    fig.update_layout(
+        title='Cumulative Returns (%)',
+        xaxis_title='Date',
+        yaxis_title='Cumulative Return (%)',
+        hovermode='x unified',
+        height=500,
+        template='plotly_white'
+    )
+    
+    return fig
+
+def create_drawdown_chart(returns_df):
+    """Create drawdown chart"""
+    fig = go.Figure()
+    
+    for col in returns_df.columns:
+        try:
+            returns = returns_df[col].dropna()
+            if len(returns) > 0:
+                drawdown = qs.stats.to_drawdown_series(returns) * 100
+                fig.add_trace(go.Scatter(
+                    x=drawdown.index,
+                    y=drawdown.values,
+                    mode='lines',
+                    name=col,
+                    fill='tozeroy',
+                    line=dict(width=1)
+                ))
+        except Exception:
+            continue
+    
+    fig.update_layout(
+        title='Drawdown (%)',
+        xaxis_title='Date',
+        yaxis_title='Drawdown (%)',
+        hovermode='x unified',
+        height=400,
+        template='plotly_white'
+    )
+    
+    return fig
+
+def create_monthly_heatmap(returns_df):
+    """Create monthly returns heatmap"""
+    if returns_df.empty:
+        return go.Figure()
+    
+    if len(returns_df.columns) > 1:
+        returns = returns_df.mean(axis=1)
+    else:
+        returns = returns_df.iloc[:, 0]
+    
+    try:
+        monthly_returns = qs.stats.monthly_returns(returns) * 100
+        
+        # Create heatmap
+        fig = go.Figure(data=go.Heatmap(
+            z=monthly_returns.values,
+            x=monthly_returns.columns,
+            y=monthly_returns.index,
+            colorscale='RdYlGn',
+            zmid=0,
+            text=monthly_returns.round(2).values,
+            texttemplate='%{text}%',
+            textfont={"size": 10},
+            hoverinfo='text'
+        ))
+        
+        fig.update_layout(
+            title='Monthly Returns Heatmap (%)',
+            xaxis_title='Month',
+            yaxis_title='Year',
+            height=400,
+            template='plotly_white'
+        )
+        
+        return fig
+    except Exception:
+        return go.Figure()
+
+def create_distribution_chart(returns_df):
+    """Create returns distribution chart"""
+    if returns_df.empty:
+        return go.Figure()
+    
+    fig = make_subplots(
+        rows=1, cols=len(returns_df.columns),
+        subplot_titles=returns_df.columns,
+        horizontal_spacing=0.1
+    )
+    
+    for idx, col in enumerate(returns_df.columns, 1):
+        try:
+            returns = returns_df[col].dropna() * 100
+            
+            if len(returns) > 0:
+                fig.add_trace(
+                    go.Histogram(
+                        x=returns,
+                        nbinsx=50,
+                        name=col,
+                        marker_color='skyblue',
+                        opacity=0.7,
+                        showlegend=False
+                    ),
+                    row=1, col=idx
+                )
+                
+                # Add vertical line for mean
+                mean_return = returns.mean()
+                fig.add_vline(
+                    x=mean_return, 
+                    line_dash="dash", 
+                    line_color="red",
+                    row=1, col=idx
+                )
+                
+                fig.update_xaxes(title_text="Daily Return (%)", row=1, col=idx)
+                fig.update_yaxes(title_text="Frequency", row=1, col=idx)
+        except Exception:
+            continue
+    
+    fig.update_layout(
+        title='Returns Distribution',
+        height=400,
+        template='plotly_white',
+        showlegend=False
+    )
+    
+    return fig
+
+def create_rolling_metrics_chart(returns_df):
+    """Create rolling Sharpe and volatility chart"""
+    if returns_df.empty:
+        return go.Figure()
+    
+    fig = make_subplots(
+        rows=2, cols=1,
+        subplot_titles=('Rolling Sharpe Ratio (6-month)', 'Rolling Volatility (6-month)'),
+        vertical_spacing=0.15
+    )
+    
+    window = 126  # 6 months trading days
+    
+    for col in returns_df.columns:
+        try:
+            returns = returns_df[col].dropna()
+            
+            if len(returns) < window:
+                continue
+            
+            # Rolling Sharpe
+            rolling_sharpe = returns.rolling(window).apply(
+                lambda x: safe_quantstats_calculation(qs.stats.sharpe, x, rf=RF_RATE),
+                raw=False
+            ).dropna()
+            
+            if len(rolling_sharpe) > 0:
+                fig.add_trace(
+                    go.Scatter(
+                        x=rolling_sharpe.index,
+                        y=rolling_sharpe.values,
+                        mode='lines',
+                        name=f'{col} - Sharpe',
+                        line=dict(width=1)
+                    ),
+                    row=1, col=1
+                )
+            
+            # Rolling Volatility
+            rolling_vol = returns.rolling(window).std() * np.sqrt(252) * 100
+            rolling_vol = rolling_vol.dropna()
+            
+            if len(rolling_vol) > 0:
+                fig.add_trace(
+                    go.Scatter(
+                        x=rolling_vol.index,
+                        y=rolling_vol.values,
+                        mode='lines',
+                        name=f'{col} - Volatility',
+                        line=dict(width=1)
+                    ),
+                    row=2, col=1
+                )
+        except Exception:
+            continue
+    
+    fig.update_xaxes(title_text="Date", row=2, col=1)
+    fig.update_yaxes(title_text="Sharpe Ratio", row=1, col=1)
+    fig.update_yaxes(title_text="Annualized Volatility (%)", row=2, col=1)
+    
+    fig.update_layout(
+        height=600,
+        template='plotly_white',
+        hovermode='x unified'
+    )
+    
+    return fig
 
 def format_metric_value(value, metric_name):
     """Format metric values appropriately"""
@@ -913,16 +1116,118 @@ def main():
         st.sidebar.success(f"Data loaded: {len(returns_df)} trading days")
         st.sidebar.info(f"Date range: {returns_df.index[0].date()} to {returns_df.index[-1].date()}")
     
-    # Main dashboard - ADDED BOLLINGER BANDS TAB
+    # Main dashboard
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "📈 Overview", "📊 Performance Metrics", "📉 Risk Analysis", 
         "📊 Bollinger Bands", "🔍 Advanced Charts", "📋 Data & Diagnostics"
     ])
     
-    # [Previous tabs 1-3 remain the same]
-    # (Keeping their content as before, not repeating for brevity)
+    with tab1:
+        st.header("Performance Overview")
+        
+        # Display data preview
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            st.subheader("Returns Data Preview")
+            st.dataframe(returns_df.tail(10).style.format("{:.4%}"))
+        
+        with col2:
+            st.subheader("Data Statistics")
+            stats_df = pd.DataFrame({
+                'Mean': returns_df.mean() * 100,
+                'Std Dev': returns_df.std() * 100,
+                'Min': returns_df.min() * 100,
+                'Max': returns_df.max() * 100,
+                'Count': returns_df.count()
+            }).T
+            st.dataframe(stats_df.style.format("{:.2f}%", subset=[col for col in stats_df.columns if col != 'Count']))
+        
+        # Summary statistics
+        st.subheader("Quick Metrics")
+        cols = st.columns(len(tickers))
+        
+        for idx, ticker in enumerate(tickers):
+            if ticker in returns_df.columns:
+                returns = returns_df[ticker].dropna()
+                
+                if len(returns) >= 10:
+                    cagr = safe_quantstats_calculation(qs.stats.cagr, returns) * 100
+                    sharpe = safe_quantstats_calculation(qs.stats.sharpe, returns, rf=RF_RATE)
+                    volatility = safe_quantstats_calculation(qs.stats.volatility, returns) * 100
+                    
+                    with cols[idx]:
+                        st.metric(
+                            label=f"{ticker} ({ticker_info.get(ticker, ticker)})",
+                            value=f"{cagr:.2f}%" if not pd.isna(cagr) else "N/A",
+                            delta=f"Sharpe: {sharpe:.2f}" if not pd.isna(sharpe) else "N/A"
+                        )
+                        st.caption(f"Volatility: {volatility:.2f}%" if not pd.isna(volatility) else "Volatility: N/A")
+        
+        # Cumulative returns chart
+        st.plotly_chart(create_returns_chart(returns_df), use_container_width=True)
+        
+        # Drawdown chart
+        st.plotly_chart(create_drawdown_chart(returns_df), use_container_width=True)
     
-    with tab4:  # NEW BOLLINGER BANDS TAB
+    with tab2:
+        st.header("Performance Metrics")
+        
+        # Calculate metrics
+        metrics = calculate_metrics(returns_df)
+        
+        # Display metrics in columns
+        for ticker in tickers:
+            if ticker in metrics:
+                st.subheader(f"{ticker} - {ticker_info.get(ticker, ticker)}")
+                
+                # Check if we have valid metrics
+                if all(pd.isna(v) for v in metrics[ticker].values()):
+                    st.warning("Insufficient data to calculate metrics for this instrument.")
+                    continue
+                
+                # Create two columns for metrics
+                col1, col2 = st.columns(2)
+                
+                metric_data = metrics[ticker]
+                with col1:
+                    for key in list(metric_data.keys())[:len(metric_data)//2]:
+                        value = metric_data[key]
+                        st.metric(key, format_metric_value(value, key))
+                
+                with col2:
+                    for key in list(metric_data.keys())[len(metric_data)//2:]:
+                        value = metric_data[key]
+                        st.metric(key, format_metric_value(value, key))
+                
+                st.divider()
+    
+    with tab3:
+        st.header("Risk Analysis")
+        
+        # Rolling metrics
+        st.plotly_chart(create_rolling_metrics_chart(returns_df), use_container_width=True)
+        
+        # Risk metrics comparison
+        st.subheader("Risk Metrics Comparison")
+        
+        risk_metrics = ['Annual Volatility', 'Max Drawdown', 'VaR (95%)', 'CVaR (95%)', 'Sharpe Ratio']
+        
+        cols = st.columns(len(tickers))
+        for idx, ticker in enumerate(tickers):
+            if ticker in metrics:
+                with cols[idx]:
+                    st.markdown(f"**{ticker}**")
+                    for metric in risk_metrics:
+                        if metric in metrics[ticker]:
+                            value = metrics[ticker][metric]
+                            if not pd.isna(value):
+                                st.metric(
+                                    label=metric,
+                                    value=format_metric_value(value, metric)
+                                )
+    
+    with tab4:
         st.header("📊 Bollinger Bands Analysis")
         st.markdown(f"""
         **Parameters:** {bollinger_params['window']}-period moving average with ±{bollinger_params['num_std']} standard deviation bands
@@ -938,16 +1243,10 @@ def main():
         bb_stats = create_bb_statistics_table(price_data, tickers, bollinger_params)
         
         if not bb_stats.empty:
-            # Display statistics
-            cols = st.columns(len(bb_stats.columns))
-            for idx, col in enumerate(bb_stats.columns):
-                with cols[idx % len(cols)]:
-                    st.dataframe(bb_stats[[col]], use_container_width=True)
+            st.dataframe(bb_stats, use_container_width=True)
         
         # Comprehensive Bollinger Bands Chart
-        st.subheader("Comprehensive Bollinger Bands Analysis")
-        bb_chart = create_bollinger_bands_chart(price_data, returns_df, tickers, bollinger_params)
-        st.plotly_chart(bb_chart, use_container_width=True)
+        create_bollinger_bands_chart(price_data, returns_df, tickers, bollinger_params)
         
         # Log Returns with Bollinger Bands
         st.subheader("Log Returns with Bollinger Bands")
@@ -994,59 +1293,6 @@ def main():
             - Extreme width: Potential mean reversion
             """)
         
-        # Interactive Analysis
-        st.subheader("Interactive Band Analysis")
-        
-        selected_ticker = st.selectbox("Select ticker for detailed band analysis:", tickers)
-        
-        if selected_ticker and selected_ticker in price_data.columns:
-            bb_data = calculate_bollinger_bands(
-                price_data[selected_ticker].dropna(),
-                window=bollinger_params['window'],
-                num_std=bollinger_params['num_std']
-            )
-            
-            if bb_data:
-                col1, col2, col3 = st.columns(3)
-                
-                with col1:
-                    current_price = bb_data['price'].iloc[-1]
-                    current_upper = bb_data['upper_band'].iloc[-1]
-                    current_lower = bb_data['lower_band'].iloc[-1]
-                    
-                    st.metric("Current Price", f"${current_price:.2f}")
-                    st.metric("Distance to Upper Band", 
-                             f"{(current_upper - current_price) / current_price * 100:.2f}%",
-                             delta="Above" if current_price > current_upper else "Below")
-                    st.metric("Distance to Lower Band", 
-                             f"{(current_price - current_lower) / current_price * 100:.2f}%",
-                             delta="Above" if current_price > current_lower else "Below")
-                
-                with col2:
-                    current_percent_b = bb_data['percent_b'].iloc[-1]
-                    current_width = bb_data['bb_width'].iloc[-1] * 100
-                    
-                    st.metric("%B Indicator", f"{current_percent_b:.2%}")
-                    
-                    if current_percent_b > 0.8:
-                        st.error("⚠️ Overbought territory (>80%)")
-                    elif current_percent_b < 0.2:
-                        st.success("✅ Oversold territory (<20%)")
-                    else:
-                        st.info("📊 Neutral territory")
-                    
-                    st.metric("Band Width", f"{current_width:.2f}%")
-                
-                with col3:
-                    # Recent breaches
-                    recent_days = 20
-                    recent_upper_breaches = bb_data['upper_breach'][-recent_days:].sum()
-                    recent_lower_breaches = bb_data['lower_breach'][-recent_days:].sum()
-                    
-                    st.metric(f"Upper Breaches (Last {recent_days} days)", recent_upper_breaches)
-                    st.metric(f"Lower Breaches (Last {recent_days} days)", recent_lower_breaches)
-                    st.metric("Total Recent Breaches", recent_upper_breaches + recent_lower_breaches)
-        
         # Download Bollinger Bands Data
         st.subheader("Download Bollinger Bands Data")
         
@@ -1088,8 +1334,116 @@ def main():
                     mime="text/csv",
                 )
     
-    # [Previous tabs 5-6 remain as Advanced Charts and Data & Diagnostics]
-    # (Keeping their content as before, not repeating for brevity)
+    with tab5:
+        st.header("Advanced Charts")
+        
+        # Returns distribution
+        st.plotly_chart(create_distribution_chart(returns_df), use_container_width=True)
+        
+        # Monthly heatmap
+        st.plotly_chart(create_monthly_heatmap(returns_df), use_container_width=True)
+        
+        # Additional QuantStats charts
+        st.subheader("QuantStats Detailed Analysis")
+        
+        if len(returns_df.columns) > 0:
+            selected_ticker = st.selectbox("Select ticker for detailed analysis:", tickers)
+            
+            if selected_ticker:
+                returns = returns_df[selected_ticker].dropna()
+                
+                if len(returns) >= 20:  # Minimum for monthly analysis
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        # Monthly returns distribution
+                        st.write("**Monthly Returns Distribution**")
+                        try:
+                            monthly_table = qs.stats.monthly_returns(returns) * 100
+                            st.dataframe(monthly_table.style.format("{:.2f}%").background_gradient(
+                                cmap='RdYlGn', axis=None, vmin=-10, vmax=10
+                            ))
+                        except Exception:
+                            st.warning("Could not calculate monthly returns")
+                    
+                    with col2:
+                        # Worst drawdown periods
+                        st.write("**Worst Drawdown Periods**")
+                        try:
+                            worst_dd = qs.stats.top_drawdowns(returns)
+                            
+                            if len(worst_dd) > 0:
+                                dd_data = []
+                                for peak, recovery, dd in worst_dd:
+                                    dd_data.append({
+                                        'Peak': peak.date() if hasattr(peak, 'date') else peak,
+                                        'Recovery': recovery.date() if hasattr(recovery, 'date') else recovery,
+                                        'Drawdown': f"{dd * 100:.2f}%"
+                                    })
+                                st.dataframe(pd.DataFrame(dd_data))
+                            else:
+                                st.info("No significant drawdowns found")
+                        except Exception:
+                            st.warning("Could not calculate drawdown periods")
+                else:
+                    st.warning("Insufficient data for detailed analysis")
+    
+    with tab6:
+        st.header("Data & Diagnostics")
+        
+        # Show raw data
+        st.subheader("Raw Price Data")
+        
+        # Download raw prices for reference
+        try:
+            if not price_data.empty:
+                st.dataframe(price_data.tail(20))
+                
+                # Download button for data
+                csv = price_data.to_csv().encode('utf-8')
+                st.download_button(
+                    label="📥 Download Price Data (CSV)",
+                    data=csv,
+                    file_name="futures_price_data.csv",
+                    mime="text/csv",
+                )
+            else:
+                st.warning("No raw price data available")
+        except Exception as e:
+            st.error(f"Could not load raw data: {str(e)}")
+        
+        # Data quality report
+        st.subheader("Data Quality Report")
+        
+        quality_report = []
+        for ticker in tickers:
+            if ticker in returns_df.columns:
+                returns = returns_df[ticker].dropna()
+                
+                quality_report.append({
+                    'Ticker': ticker,
+                    'Days Available': len(returns),
+                    'Missing Values': returns.isna().sum(),
+                    'Zero Returns': (returns == 0).sum(),
+                    'Positive Days': (returns > 0).sum(),
+                    'Negative Days': (returns < 0).sum(),
+                    'Start Date': returns.index.min().date() if len(returns) > 0 else 'N/A',
+                    'End Date': returns.index.max().date() if len(returns) > 0 else 'N/A'
+                })
+        
+        if quality_report:
+            st.dataframe(pd.DataFrame(quality_report))
+        
+        # System information
+        st.subheader("System Information")
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric("Python Version", f"{pd.__version__}")
+        with col2:
+            st.metric("Pandas Version", f"{pd.__version__}")
+        with col3:
+            st.metric("QuantStats Version", f"{qs.__version__}")
     
     # Footer
     st.sidebar.divider()
@@ -1097,6 +1451,12 @@ def main():
     **Data Sources:** 
     - Futures data: Yahoo Finance
     - Risk-free rate: 2% (annualized)
+    
+    **Notes:**
+    - All returns are daily returns
+    - Missing data is forward-filled up to 5 days
+    - Extreme returns (>50% daily) are filtered out
+    - Analysis requires minimum 10 data points
     
     **Bollinger Bands:**
     - Developed by John Bollinger
