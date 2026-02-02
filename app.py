@@ -11,12 +11,12 @@ warnings.filterwarnings('ignore')
 
 # Set page configuration
 st.set_page_config(
-    page_title="Gold & Silver Futures Analyzer",
+    page_title="QuantEdge Futures Analyzer",
     page_icon="📊",
     layout="wide"
 )
 
-# Initialize QuantStats
+# Initialize QuantEdge (QuantStats)
 qs.extend_pandas()
 
 # Constants
@@ -699,8 +699,8 @@ def get_data_with_validation(tickers, start_date, end_date, period):
         st.error(f"Error processing data: {str(e)}")
         return pd.DataFrame(), pd.DataFrame()
 
-def safe_quantstats_calculation(func, returns, *args, **kwargs):
-    """Safely calculate QuantStats metrics with error handling"""
+def safe_quantedge_calculation(func, returns, *args, **kwargs):
+    """Safely calculate QuantEdge metrics with error handling"""
     try:
         if len(returns) < 2:
             return np.nan
@@ -748,23 +748,23 @@ def calculate_metrics(returns_df):
         
         # Calculate each metric with error handling
         metrics[col] = {
-            'Cumulative Return': safe_quantstats_calculation(qs.stats.comp, returns) * 100,
-            'Annual Return': safe_quantstats_calculation(qs.stats.cagr, returns) * 100,
-            'Annual Volatility': safe_quantstats_calculation(qs.stats.volatility, returns) * 100,
-            'Sharpe Ratio': safe_quantstats_calculation(qs.stats.sharpe, returns, rf=RF_RATE),
-            'Sortino Ratio': safe_quantstats_calculation(qs.stats.sortino, returns, rf=RF_RATE),
-            'Max Drawdown': safe_quantstats_calculation(qs.stats.max_drawdown, returns) * 100,
-            'Calmar Ratio': safe_quantstats_calculation(qs.stats.calmar, returns),
-            'Omega Ratio': safe_quantstats_calculation(qs.stats.omega, returns, rf=RF_RATE),
-            'VaR (95%)': safe_quantstats_calculation(qs.stats.value_at_risk, returns) * 100,
-            'CVaR (95%)': safe_quantstats_calculation(qs.stats.cvar, returns) * 100,
-            'Skewness': safe_quantstats_calculation(qs.stats.skew, returns),
-            'Kurtosis': safe_quantstats_calculation(qs.stats.kurtosis, returns),
-            'Win Rate': safe_quantstats_calculation(qs.stats.win_rate, returns) * 100,
-            'Profit Factor': safe_quantstats_calculation(qs.stats.profit_factor, returns),
-            'Tail Ratio': safe_quantstats_calculation(qs.stats.tail_ratio, returns),
-            'Daily Value at Risk': safe_quantstats_calculation(qs.stats.value_at_risk, returns) * 100,
-            'Expected Shortfall': safe_quantstats_calculation(qs.stats.expected_shortfall, returns) * 100,
+            'Cumulative Return': safe_quantedge_calculation(qs.stats.comp, returns) * 100,
+            'Annual Return': safe_quantedge_calculation(qs.stats.cagr, returns) * 100,
+            'Annual Volatility': safe_quantedge_calculation(qs.stats.volatility, returns) * 100,
+            'Sharpe Ratio': safe_quantedge_calculation(qs.stats.sharpe, returns, rf=RF_RATE),
+            'Sortino Ratio': safe_quantedge_calculation(qs.stats.sortino, returns, rf=RF_RATE),
+            'Max Drawdown': safe_quantedge_calculation(qs.stats.max_drawdown, returns) * 100,
+            'Calmar Ratio': safe_quantedge_calculation(qs.stats.calmar, returns),
+            'Omega Ratio': safe_quantedge_calculation(qs.stats.omega, returns, rf=RF_RATE),
+            'VaR (95%)': safe_quantedge_calculation(qs.stats.value_at_risk, returns) * 100,
+            'CVaR (95%)': safe_quantedge_calculation(qs.stats.cvar, returns) * 100,
+            'Skewness': safe_quantedge_calculation(qs.stats.skew, returns),
+            'Kurtosis': safe_quantedge_calculation(qs.stats.kurtosis, returns),
+            'Win Rate': safe_quantedge_calculation(qs.stats.win_rate, returns) * 100,
+            'Profit Factor': safe_quantedge_calculation(qs.stats.profit_factor, returns),
+            'Tail Ratio': safe_quantedge_calculation(qs.stats.tail_ratio, returns),
+            'Daily Value at Risk': safe_quantedge_calculation(qs.stats.value_at_risk, returns) * 100,
+            'Expected Shortfall': safe_quantedge_calculation(qs.stats.expected_shortfall, returns) * 100,
         }
     
     return metrics
@@ -941,7 +941,7 @@ def create_rolling_metrics_chart(returns_df):
             
             # Rolling Sharpe
             rolling_sharpe = returns.rolling(window).apply(
-                lambda x: safe_quantstats_calculation(qs.stats.sharpe, x, rf=RF_RATE),
+                lambda x: safe_quantedge_calculation(qs.stats.sharpe, x, rf=RF_RATE),
                 raw=False
             ).dropna()
             
@@ -1001,9 +1001,9 @@ def format_metric_value(value, metric_name):
 
 # Main application
 def main():
-    st.title("📊 Gold & Silver Futures Performance Analyzer")
+    st.title("📊 QuantEdge Futures Performance Analyzer")
     st.markdown("""
-    Analyze performance and risk metrics for Gold (GC=F) and Silver (SI=F) futures using QuantStats.
+    Analyze performance and risk metrics for Gold (GC=F) and Silver (SI=F) futures using QuantEdge.
     Risk-free rate is set to 2%.
     """)
     
@@ -1152,9 +1152,9 @@ def main():
                 returns = returns_df[ticker].dropna()
                 
                 if len(returns) >= 10:
-                    cagr = safe_quantstats_calculation(qs.stats.cagr, returns) * 100
-                    sharpe = safe_quantstats_calculation(qs.stats.sharpe, returns, rf=RF_RATE)
-                    volatility = safe_quantstats_calculation(qs.stats.volatility, returns) * 100
+                    cagr = safe_quantedge_calculation(qs.stats.cagr, returns) * 100
+                    sharpe = safe_quantedge_calculation(qs.stats.sharpe, returns, rf=RF_RATE)
+                    volatility = safe_quantedge_calculation(qs.stats.volatility, returns) * 100
                     
                     with cols[idx]:
                         st.metric(
@@ -1343,8 +1343,8 @@ def main():
         # Monthly heatmap
         st.plotly_chart(create_monthly_heatmap(returns_df), use_container_width=True)
         
-        # Additional QuantStats charts
-        st.subheader("QuantStats Detailed Analysis")
+        # Additional QuantEdge charts
+        st.subheader("QuantEdge Detailed Analysis")
         
         if len(returns_df.columns) > 0:
             selected_ticker = st.selectbox("Select ticker for detailed analysis:", tickers)
@@ -1443,7 +1443,7 @@ def main():
         with col2:
             st.metric("Pandas Version", f"{pd.__version__}")
         with col3:
-            st.metric("QuantStats Version", f"{qs.__version__}")
+            st.metric("QuantEdge Version", f"{qs.__version__}")
     
     # Footer
     st.sidebar.divider()
